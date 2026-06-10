@@ -1,0 +1,103 @@
+{
+  "title": "Tutorial Quest",
+  "total_endings": 2,
+  "initial_message": "Welcome to the Tutorial Quest! This will show you how the JSON engine works.",
+  "initial_state": {
+    "scene": "scene_1",
+    "gold": 0,
+    "has_key": false
+  },
+  "scenes": {
+    "scene_1": {
+      "text": "You are in a dark room. There is a wooden door and a shiny coin on the floor.",
+      "options": [
+        {
+          "text": [
+            {
+              "condition": "state['gold'] == 0",
+              "value": "Pick up the coin"
+            },
+            {
+              "default": true,
+              "value": "Look at the floor (You already took the coin)"
+            }
+          ],
+          "actions": [
+            "if state['gold'] == 0: state['gold'] += 1"
+          ],
+          "logic": [
+            {
+              "condition": "state['gold'] > 0",
+              "message": "You already picked up the coin!",
+              "next": "scene_1"
+            },
+            {
+              "default": true,
+              "message": "You picked up a gold coin!",
+              "next": "scene_1"
+            }
+          ]
+        },
+        {
+          "text": "Try to open the door",
+          "logic": [
+            {
+              "condition": "state['has_key']",
+              "next": "scene_2"
+            },
+            {
+              "default": true,
+              "message": "The door is locked.",
+              "next": "scene_1"
+            }
+          ]
+        },
+        {
+          "text": "Search the room",
+          "actions": [
+            "import random",
+            "state['found'] = random.random() < 0.5"
+          ],
+          "logic": [
+            {
+              "condition": "state['has_key']",
+              "message": "You already found the key.",
+              "next": "scene_1"
+            },
+            {
+              "condition": "state['found']",
+              "message": "You found a key hidden under a rock!",
+              "actions": [
+                "state['has_key'] = True"
+              ],
+              "next": "scene_1"
+            },
+            {
+              "default": true,
+              "message": "You found nothing but dust.",
+              "next": "scene_1"
+            }
+          ]
+        }
+      ]
+    },
+    "scene_2": {
+      "text": "You unlocked the door and stepped into a hallway. A goblin demands 1 gold to pass.",
+      "options": [
+        {
+          "text": "Pay the goblin 1 gold",
+          "logic": [
+            {
+              "condition": "state['gold'] >= 1",
+              "ending": "WIN: You paid the goblin and escaped!"
+            },
+            {
+              "default": true,
+              "ending": "DEATH: You don't have enough gold. The goblin eats you."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
