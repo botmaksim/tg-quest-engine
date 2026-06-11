@@ -144,6 +144,41 @@ def start_specific_quest(chat_id, quest_id):
     bot.send_message(chat_id, welcome_text)
     send_scene(chat_id)
 
+@bot.message_handler(commands=['endings'])
+def check_endings(message):
+    chat_id = message.chat.id
+    if chat_id not in user_states or not user_states[chat_id].get('active_quest'):
+        bot.send_message(chat_id, "You haven't started a quest yet. Use /choose or /start")
+        return
+        
+    quest_data = get_quest_data(chat_id)
+    active_quest = user_states[chat_id]['active_quest']
+    unlocked = len(user_states[chat_id]['unlocked_endings'].get(active_quest, set()))
+    total = quest_data.get('total_endings', 0)
+    title = quest_data.get('title', active_quest)
+    
+    if total > 0:
+        bot.send_message(chat_id, f"🏆 Endings unlocked for '{title}': {unlocked}/{total}")
+    else:
+        bot.send_message(chat_id, f"🏆 Endings unlocked for '{title}': {unlocked}")
+
+@bot.message_handler(commands=['choose'])
+def choose_quest(message):
+    chat_id = message.chat.id
+    
+    if not loaded_quests:
+        bot.send_message(chat_id, "No quests loaded!")
+        return
+        
+    if chat_id not in user_states:
+        user_states[chat_id] = {'active_quest': None, 'state': {}, 'unlocked_endings': {}}
+        
+    markup = InlineKeyboardMarkup(row_width=1)
+    for q_id, q_data in loaded_quests.items():
+        title = q_data.get('title', q_id)
+        markup.add(InlineKeyboardButton(title, callback_data=f"start_quest|{q_id}"))
+    bot.send_message(chat_id, "Choose a quest to play:", reply_markup=markup)
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith('start_quest|') or call.data.startswith('opt|') or call.data == 'restart')
 def handle_option(call):
     chat_id = call.message.chat.id
@@ -222,5 +257,11 @@ def handle_option(call):
                 return
 
 if __name__ == '__main__':
+    print("Setting up bot commands...")
+    bot.set_my_commands([
+        telebot.types.BotCommand("/start", "Start or restart current quest"),
+        telebot.types.BotCommand("/choose", "Choose a different quest"),
+        telebot.types.BotCommand("/endings", "Check unlocked endings")
+    ])
     print("Engine is running and ready...")
     bot.infinity_polling()
