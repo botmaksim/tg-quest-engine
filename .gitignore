@@ -11,3 +11,4 @@ __pycache__/
 .env
 quests/*.json
 !quests/*.json.example
+quest-bot/
