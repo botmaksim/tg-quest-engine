@@ -52,6 +52,8 @@ def track_cleanup(chat_id, message_id):
             user_states[chat_id]['cleanup_messages'] = []
         if message_id not in user_states[chat_id]['cleanup_messages']:
             user_states[chat_id]['cleanup_messages'].append(message_id)
+            if len(user_states[chat_id]['cleanup_messages']) > 50:
+                user_states[chat_id]['cleanup_messages'].pop(0)
 
 def eval_text(text_block, state):
     if isinstance(text_block, str):
@@ -70,13 +72,19 @@ def eval_text(text_block, state):
                 return item.get('value', '')
     return ""
 
-def send_scene(chat_id):
+def send_scene(chat_id, edit_message_id=None):
     state = get_state(chat_id)
     quest_data = get_quest_data(chat_id)
     scene_id = state.get('scene', 'scene_1')
     
     if scene_id not in quest_data['scenes']:
-        bot.send_message(chat_id, "Error: scene not found!")
+        if edit_message_id:
+            try:
+                bot.edit_message_text("Error: scene not found!", chat_id=chat_id, message_id=edit_message_id)
+            except telebot.apihelper.ApiTelegramException:
+                bot.send_message(chat_id, "Error: scene not found!")
+        else:
+            bot.send_message(chat_id, "Error: scene not found!")
         return
 
     scene_info = quest_data['scenes'][scene_id]
@@ -88,7 +96,14 @@ def send_scene(chat_id):
         if btn_text:
             markup.add(InlineKeyboardButton(btn_text, callback_data=f"opt|{scene_id}|{idx}"))
 
-    bot.send_message(chat_id, text, reply_markup=markup)
+    if edit_message_id:
+        try:
+            bot.edit_message_text(text, chat_id=chat_id, message_id=edit_message_id, reply_markup=markup)
+        except telebot.apihelper.ApiTelegramException as e:
+            if "message is not modified" not in str(e).lower():
+                bot.send_message(chat_id, text, reply_markup=markup)
+    else:
+        bot.send_message(chat_id, text, reply_markup=markup)
     
     if scene_id == 'epilogue':
         track_ending(chat_id, text)
@@ -224,11 +239,6 @@ def handle_option(call):
             send_scene(chat_id)
         return
 
-    try:
-        bot.delete_message(chat_id, call.message.message_id)
-    except Exception:
-        bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
-
     quest_data = get_quest_data(chat_id)
     if not quest_data:
         return
@@ -273,6 +283,10 @@ def handle_option(call):
                 track_cleanup(chat_id, msg.message_id)
                 
             if 'ending' in logic_block:
+                try:
+                    bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
+                except Exception:
+                    pass
                 trigger_ending(chat_id, logic_block['ending'], logic_block.get('sticker'))
                 return
                 
@@ -285,7 +299,7 @@ def handle_option(call):
                     except telebot.apihelper.ApiTelegramException:
                         msg = bot.send_message(chat_id, f"[Sticker placeholder: {logic_block['sticker']}]")
                         track_cleanup(chat_id, msg.message_id)
-                send_scene(chat_id)
+                send_scene(chat_id, edit_message_id=call.message.message_id)
                 return
 
 if __name__ == '__main__':
