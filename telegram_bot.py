@@ -103,8 +103,14 @@ def track_ending(chat_id, ending_text):
     if total > 0:
         bot.send_message(chat_id, f"🏆 Endings unlocked: {unlocked}/{total}")
 
-def trigger_ending(chat_id, text, sticker_id=None):
-    bot.send_message(chat_id, f"💀 {text}")
+def trigger_ending(chat_id, text, sticker_id=None, edit_message_id=None):
+    if edit_message_id:
+        try:
+            bot.edit_message_text(f"💀 {text}", chat_id=chat_id, message_id=edit_message_id)
+        except telebot.apihelper.ApiTelegramException:
+            bot.send_message(chat_id, f"💀 {text}")
+    else:
+        bot.send_message(chat_id, f"💀 {text}")
     
     if sticker_id:
         try:
@@ -266,12 +272,7 @@ def handle_option(call):
                 bot.send_message(chat_id, logic_block['message'])
                 
             if 'ending' in logic_block:
-                try:
-                    # Успешно дошли до концовки, удаляем сообщение с квестом
-                    bot.delete_message(chat_id, call.message.message_id)
-                except Exception:
-                    pass
-                trigger_ending(chat_id, logic_block['ending'], logic_block.get('sticker'))
+                trigger_ending(chat_id, logic_block['ending'], logic_block.get('sticker'), edit_message_id=call.message.message_id)
                 return
                 
             if 'next' in logic_block:
