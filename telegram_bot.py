@@ -37,24 +37,6 @@ def get_quest_data(chat_id):
 def get_state(chat_id):
     return user_states[chat_id]['state']
 
-def cleanup_chat(chat_id):
-    if chat_id in user_states and 'cleanup_messages' in user_states[chat_id]:
-        for msg_id in user_states[chat_id]['cleanup_messages']:
-            try:
-                bot.delete_message(chat_id, msg_id)
-            except Exception:
-                pass
-        user_states[chat_id]['cleanup_messages'] = []
-
-def track_cleanup(chat_id, message_id):
-    if chat_id in user_states:
-        if 'cleanup_messages' not in user_states[chat_id]:
-            user_states[chat_id]['cleanup_messages'] = []
-        if message_id not in user_states[chat_id]['cleanup_messages']:
-            user_states[chat_id]['cleanup_messages'].append(message_id)
-            if len(user_states[chat_id]['cleanup_messages']) > 50:
-                user_states[chat_id]['cleanup_messages'].pop(0)
-
 def eval_text(text_block, state):
     if isinstance(text_block, str):
         return text_block
@@ -119,38 +101,32 @@ def track_ending(chat_id, ending_text):
     unlocked = len(user_states[chat_id]['unlocked_endings'][active_quest])
     total = quest_data.get('total_endings', 0)
     if total > 0:
-        msg = bot.send_message(chat_id, f"🏆 Endings unlocked: {unlocked}/{total}")
-        track_cleanup(chat_id, msg.message_id)
+        bot.send_message(chat_id, f"🏆 Endings unlocked: {unlocked}/{total}")
 
 def trigger_ending(chat_id, text, sticker_id=None):
-    msg = bot.send_message(chat_id, f"💀 {text}")
-    track_cleanup(chat_id, msg.message_id)
+    bot.send_message(chat_id, f"💀 {text}")
     
     if sticker_id:
         try:
-            msg = bot.send_sticker(chat_id, sticker_id)
-            track_cleanup(chat_id, msg.message_id)
+            bot.send_sticker(chat_id, sticker_id)
         except telebot.apihelper.ApiTelegramException:
-            msg = bot.send_message(chat_id, f"[Sticker placeholder: {sticker_id}]")
-            track_cleanup(chat_id, msg.message_id)
+            bot.send_message(chat_id, f"[Sticker placeholder: {sticker_id}]")
             
     track_ending(chat_id, text)
             
     markup = InlineKeyboardMarkup(row_width=1).add(InlineKeyboardButton("🔄 Restart", callback_data="restart"))
-    msg = bot.send_message(chat_id, "Game over.", reply_markup=markup)
-    track_cleanup(chat_id, msg.message_id)
+    bot.send_message(chat_id, "Game over.", reply_markup=markup)
 
 @bot.message_handler(commands=['start'])
 def start_quest(message):
     chat_id = message.chat.id
-    cleanup_chat(chat_id)
     
     if not loaded_quests:
         bot.send_message(chat_id, "No quests loaded!")
         return
         
     if chat_id not in user_states:
-        user_states[chat_id] = {'active_quest': None, 'state': {}, 'unlocked_endings': {}, 'cleanup_messages': []}
+        user_states[chat_id] = {'active_quest': None, 'state': {}, 'unlocked_endings': {}}
         
     if len(loaded_quests) == 1:
         quest_id = list(loaded_quests.keys())[0]
@@ -169,7 +145,7 @@ def start_specific_quest(chat_id, quest_id):
     quest_data = loaded_quests[quest_id]
     
     if chat_id not in user_states:
-        user_states[chat_id] = {'active_quest': None, 'state': {}, 'unlocked_endings': {}, 'cleanup_messages': []}
+        user_states[chat_id] = {'active_quest': None, 'state': {}, 'unlocked_endings': {}}
         
     if quest_id not in user_states[chat_id]['unlocked_endings']:
         user_states[chat_id]['unlocked_endings'][quest_id] = set()
@@ -202,14 +178,13 @@ def check_endings(message):
 @bot.message_handler(commands=['choose'])
 def choose_quest(message):
     chat_id = message.chat.id
-    cleanup_chat(chat_id)
     
     if not loaded_quests:
         bot.send_message(chat_id, "No quests loaded!")
         return
         
     if chat_id not in user_states:
-        user_states[chat_id] = {'active_quest': None, 'state': {}, 'unlocked_endings': {}, 'cleanup_messages': []}
+        user_states[chat_id] = {'active_quest': None, 'state': {}, 'unlocked_endings': {}}
         
     markup = InlineKeyboardMarkup(row_width=1)
     for q_id, q_data in loaded_quests.items():
@@ -221,6 +196,11 @@ def choose_quest(message):
 def handle_option(call):
     chat_id = call.message.chat.id
     
+    try:
+        bot.answer_callback_query(call.id)
+    except Exception as e:
+        print(f"Failed to answer callback query: {e}")
+    
     if call.data.startswith('start_quest|'):
         try:
             bot.delete_message(chat_id, call.message.message_id)
@@ -231,7 +211,11 @@ def handle_option(call):
         return
 
     if call.data == 'restart':
-        cleanup_chat(chat_id)
+        try:
+            bot.delete_message(chat_id, call.message.message_id)
+        except Exception:
+            bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
+        
         active_quest = user_states[chat_id].get('active_quest')
         if active_quest:
             quest_data = loaded_quests[active_quest]
@@ -279,12 +263,12 @@ def handle_option(call):
             
         if matched:
             if 'message' in logic_block:
-                msg = bot.send_message(chat_id, logic_block['message'])
-                track_cleanup(chat_id, msg.message_id)
+                bot.send_message(chat_id, logic_block['message'])
                 
             if 'ending' in logic_block:
                 try:
-                    bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
+                    # Успешно дошли до концовки, удаляем сообщение с квестом
+                    bot.delete_message(chat_id, call.message.message_id)
                 except Exception:
                     pass
                 trigger_ending(chat_id, logic_block['ending'], logic_block.get('sticker'))
@@ -294,11 +278,9 @@ def handle_option(call):
                 state['scene'] = logic_block['next']
                 if logic_block['next'] == 'epilogue' and 'sticker' in logic_block:
                     try:
-                        msg = bot.send_sticker(chat_id, logic_block['sticker'])
-                        track_cleanup(chat_id, msg.message_id)
+                        bot.send_sticker(chat_id, logic_block['sticker'])
                     except telebot.apihelper.ApiTelegramException:
-                        msg = bot.send_message(chat_id, f"[Sticker placeholder: {logic_block['sticker']}]")
-                        track_cleanup(chat_id, msg.message_id)
+                        bot.send_message(chat_id, f"[Sticker placeholder: {logic_block['sticker']}]")
                 send_scene(chat_id, edit_message_id=call.message.message_id)
                 return
 
